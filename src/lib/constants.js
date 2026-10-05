@@ -20,14 +20,6 @@ export const EARNING_STATUSES = ["confirmed", "completed"];
 
 export const HOLD_MINUTES = 30;
 
-// Seeded by supabase/schema.sql — for the live demonstration only.
-export const DEMO_PASSWORD = "ginhawa2026";
-export const DEMO_ACCOUNTS = [
-  { role: "customer", label: "Customer", name: "Patricia Diamante", email: "patricia@ginhawa.demo" },
-  { role: "receptionist", label: "Front desk", name: "Jayson Reyes", email: "frontdesk@ginhawa.demo" },
-  { role: "admin", label: "Admin", name: "Marlinda Alminaza", email: "admin@ginhawa.demo" },
-];
-
 export const PAYMENT_METHODS = {
   bank_transfer: "Bank transfer",
   gcash: "GCash",
