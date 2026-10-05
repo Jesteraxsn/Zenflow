@@ -60,10 +60,7 @@ export default function LoginForm({ roles, eyebrow, heading, intro, submitLabel,
 
         {error && <p className="mt-3 text-xs text-rose">{error}</p>}
 
-        <div className="mt-4 flex items-center justify-between text-xs">
-          <label className="flex items-center gap-2 text-muted">
-            <input type="checkbox" className="accent-forest" defaultChecked /> Remember me
-          </label>
+        <div className="mt-4 flex justify-end text-xs">
           <Link href="/forgot-password" className="font-semibold text-forest hover:underline">Forgot password?</Link>
         </div>
 
