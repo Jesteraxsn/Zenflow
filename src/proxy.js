@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { ROLE_HOME, rulesFor } from "@/lib/session";
+import { LOGIN_PAGES, ROLE_HOME, loginFor, rulesFor } from "@/lib/session";
 
 export async function proxy(request) {
   const { pathname, search } = request.nextUrl;
@@ -39,15 +39,15 @@ export async function proxy(request) {
   };
 
   // Signed-in users don't need the login/register screens.
-  if (role && (pathname === "/login" || pathname === "/register")) {
+  if (role && (LOGIN_PAGES.includes(pathname) || pathname === "/register")) {
     return redirect(ROLE_HOME[role]);
   }
 
   const rule = rulesFor(pathname);
   if (!rule) return response;
 
-  // Not signed in → login, then come back here.
-  if (!role) return redirect(`/login?next=${encodeURIComponent(pathname + search)}`);
+  // Not signed in → the matching login page (customer or staff), then come back here.
+  if (!role) return redirect(`${loginFor(pathname)}?next=${encodeURIComponent(pathname + search)}`);
 
   // Signed in with the wrong role → their own portal.
   if (!rule.roles.includes(role)) return redirect(ROLE_HOME[role]);

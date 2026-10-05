@@ -6,6 +6,7 @@ import Logo from "./Logo";
 import Icon from "./Icon";
 import { useAuth } from "@/context/AuthContext";
 import { initials } from "@/lib/format";
+import { STAFF_LOGIN } from "@/lib/session";
 
 const roleLabel = { admin: "Administrator", receptionist: "Front desk", customer: "Customer" };
 
@@ -19,7 +20,7 @@ export default function PortalShell({ nav, home, title, children }) {
 
   async function logout() {
     await signOut();
-    router.push("/login");
+    router.push(STAFF_LOGIN);
     router.refresh();
   }
 
