@@ -1,26 +1,53 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  --color-cream: #f4efe4;
+  --color-card: #fcfaf5;
+  --color-sand: #efe7d6;
+  --color-tan: #f1e3c4;
+  --color-line: #e4dccb;
+  --color-forest: #2f5f32;
+  --color-forest-dark: #22492a;
+  --color-sage: #e2eadc;
+  --color-ink: #3a2a1a;
+  --color-muted: #75695b;
+  --color-bark: #4b2a0e;
+  --color-espresso: #2b2119;
+  --color-rose: #b5473a;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-serif: var(--font-cormorant), Georgia, serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+@layer components {
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-forest;
+  }
+  .card {
+    @apply rounded-xl border border-line bg-card shadow-[0_1px_2px_rgba(58,42,26,0.05)];
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-forest px-6 py-3 text-xs font-semibold uppercase tracking-wider text-white transition hover:bg-forest-dark disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-forest px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-forest transition hover:bg-sage;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-rose px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-rose transition hover:bg-rose/5;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-semibold text-ink;
+  }
+  .input {
+    @apply w-full rounded-lg border border-line bg-white px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-muted/70 focus:border-forest focus:ring-2 focus:ring-forest/15;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider;
+  }
 }
