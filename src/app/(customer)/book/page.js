@@ -31,7 +31,7 @@ export default function BookPage() {
   const [services, therapists] = catalog.data;
   const service = services.find((s) => s.id === draft.serviceId) ?? services[0];
   const duration = service.durations.includes(draft.duration) ? draft.duration : service.durations.at(-1);
-  const staff = bookableTherapists(therapists);
+  const staff = bookableTherapists(therapists, draft.date ?? undefined);
   const chosen = draft.therapistMode === "specific" ? therapists.find((t) => t.id === draft.therapistId) : null;
 
   const availability = draft.date
@@ -196,7 +196,7 @@ export default function BookPage() {
                       >
                         <span className={a.available ? "" : "line-through"}>{slot.label}</span>
                         <span className={`text-[10px] ${selected ? "text-white/80" : "text-muted"}`}>
-                          {a.reason === "past" ? "Passed" : a.reason === "booked" ? "Booked" : !chosen && a.freeCount ? `${a.freeCount} free` : ""}
+                          {a.reason === "past" ? "Passed" : a.reason === "booked" ? "Booked" : a.reason === "off" ? "Unavailable" : !chosen && a.freeCount ? `${a.freeCount} free` : ""}
                         </span>
                       </button>
                     );

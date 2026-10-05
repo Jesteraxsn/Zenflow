@@ -27,7 +27,7 @@ export default function WalkInPage() {
   const [services, therapists] = catalog.data;
   const service = services.find((s) => s.id === form.serviceId) ?? services[0];
   const duration = service.durations.includes(form.duration) ? form.duration : service.durations.at(-1);
-  const staff = bookableTherapists(therapists);
+  const staff = bookableTherapists(therapists, form.date);
   const therapistId = form.therapistId === "any" ? null : form.therapistId;
   const availability = slotAvailability({ date: form.date, slots: TIME_SLOTS, duration, busy: busy.data ?? [], therapists: staff, therapistId });
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value, ...(k !== "client" && k !== "phone" && k !== "payment" ? { time: "" } : {}) });

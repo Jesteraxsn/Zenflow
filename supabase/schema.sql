@@ -149,7 +149,8 @@ begin
           p_type, p_action, p_amount, p_booking);
 end $$;
 
--- New sign-ups become customers, except the demo staff emails below.
+-- Every sign-up is a customer. Staff roles are only ever granted by an admin
+-- (or by the seed below), never by the email address someone registers with.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql security definer set search_path = public
@@ -160,11 +161,7 @@ begin
           coalesce(new.raw_user_meta_data ->> 'full_name', ''),
           new.email,
           new.raw_user_meta_data ->> 'phone',
-          case lower(new.email)
-            when 'admin@ginhawa.demo'     then 'admin'
-            when 'frontdesk@ginhawa.demo' then 'receptionist'
-            else 'customer'
-          end::user_role)
+          'customer')
   on conflict (id) do nothing;
   return new;
 end $$;
@@ -246,6 +243,52 @@ begin
       and b.ends_at   > ( p_day      ::timestamp at time zone 'Asia/Manila');
 end $$;
 
+-- Does a free-text schedule like 'Mon – Sat' or 'Mon, Wed, Fri' include this date?
+-- Unreadable text counts as every day so a typo never hides a therapist.
+-- Mirrors worksOn() in src/lib/availability.js.
+create or replace function public.works_on(p_days text, p_day date)
+returns boolean
+language plpgsql immutable
+as $$
+declare
+  v_names  text[] := array['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  v_dow    int := extract(dow from p_day);
+  v_part   text;
+  v_bits   text[];
+  v_a      int;
+  v_b      int;
+  v_parsed boolean := false;
+begin
+  if p_days is null or btrim(p_days) = '' or p_days ~* '(daily|every)' then return true; end if;
+  foreach v_part in array string_to_array(p_days, ',') loop
+    v_bits := regexp_split_to_array(btrim(v_part), '\s*[–—-]\s*');
+    v_a := array_position(v_names, lower(left(btrim(v_bits[1]), 3))) - 1;
+    v_b := array_position(v_names, lower(left(btrim(coalesce(v_bits[2], v_bits[1])), 3))) - 1;
+    continue when v_a is null or v_b is null;
+    v_parsed := true;
+    if (v_a <= v_b and v_dow between v_a and v_b)
+       or (v_a > v_b and (v_dow >= v_a or v_dow <= v_b)) then
+      return true;
+    end if;
+  end loop;
+  return not v_parsed;
+end $$;
+
+-- Is this therapist working for the whole session? Manila wall-clock time;
+-- 'Off today' only blocks today. Mirrors bookableTherapists()/withinShift().
+create or replace function public.therapist_on_shift(t public.therapists, p_start timestamptz, p_end timestamptz)
+returns boolean
+language sql stable
+as $$
+  select t.active
+     and public.works_on(t.work_days, (p_start at time zone 'Asia/Manila')::date)
+     and not (t.status = 'Off today'
+              and (p_start at time zone 'Asia/Manila')::date = (now() at time zone 'Asia/Manila')::date)
+     and (p_end at time zone 'Asia/Manila')::date = (p_start at time zone 'Asia/Manila')::date
+     and (p_start at time zone 'Asia/Manila')::time >= t.shift_start
+     and (p_end   at time zone 'Asia/Manila')::time <= t.shift_end
+$$;
+
 -- Creates a booking. p_therapist null = "any available therapist" (round-robin).
 -- Customers book for themselves (online, pending_payment); staff can encode walk-ins.
 create or replace function public.create_booking(
@@ -279,11 +322,18 @@ begin
   if not found then raise exception 'Treatment not available'; end if;
   if not (p_duration = any (v_service.durations)) then raise exception 'Invalid duration'; end if;
 
+  if v_ther is not null and not p_walk_in then
+    -- Customers can only pick a therapist who is working then; staff may override for walk-ins.
+    if not exists (select 1 from therapists t where t.id = v_ther and public.therapist_on_shift(t, p_starts_at, v_ends)) then
+      raise exception 'That therapist isn''t working at that time. Please pick another time or therapist.';
+    end if;
+  end if;
+
   if v_ther is null then
-    -- Round-robin: the free therapist who was assigned least recently.
+    -- Round-robin: the free, on-shift therapist who was assigned least recently.
     select t.id into v_ther
     from therapists t
-    where t.active and t.status <> 'Off today'
+    where public.therapist_on_shift(t, p_starts_at, v_ends)
       and not exists (
         select 1 from bookings b
         where b.therapist_id = t.id
@@ -556,6 +606,9 @@ begin
             jsonb_build_object('sub', v_bid::text, 'email', u.email, 'email_verified', true),
             'email', now(), now(), now());
   end loop;
+
+  update profiles set role = 'admin'        where email = 'admin@ginhawa.demo';
+  update profiles set role = 'receptionist' where email = 'frontdesk@ginhawa.demo';
 
   select id into v_admin from profiles where email = 'admin@ginhawa.demo';
   select id into v_desk  from profiles where email = 'frontdesk@ginhawa.demo';
