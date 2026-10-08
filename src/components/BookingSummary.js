@@ -1,5 +1,6 @@
 import { TIME_SLOTS } from "@/lib/constants";
 import { longDate, peso } from "@/lib/format";
+import { priceFor } from "@/lib/pricing";
 
 export const slotLabel = (value) => TIME_SLOTS.find((s) => s.value === value)?.label ?? value;
 
@@ -19,7 +20,7 @@ export default function BookingSummary({ service, therapistName, date, time, dur
           </ul>
           <div className="mt-5 border-t border-line pt-4">
             <p className="text-xs text-muted">Total</p>
-            <p className="font-serif text-3xl">{peso(service.price)}</p>
+            <p className="font-serif text-3xl">{peso(priceFor(service, duration))}</p>
           </div>
         </>
       ) : (

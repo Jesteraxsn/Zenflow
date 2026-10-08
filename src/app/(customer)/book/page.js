@@ -11,6 +11,7 @@ import { cancelBooking, createBooking, getBooking, getBusySlots, getServices, ge
 import { bookableTherapists, slotAvailability } from "@/lib/availability";
 import { TIME_SLOTS } from "@/lib/constants";
 import { peso } from "@/lib/format";
+import { fromPrice, priceFor } from "@/lib/pricing";
 import useAsync from "@/lib/useAsync";
 import { useAuth } from "@/context/AuthContext";
 import { useBooking } from "@/context/BookingContext";
@@ -103,7 +104,7 @@ export default function BookPage() {
                 >
                   {services.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name} · {s.durations.at(-1)} minutes · {peso(s.price)}
+                      {s.name} · {fromPrice(s)}
                     </option>
                   ))}
                 </select>
@@ -112,7 +113,7 @@ export default function BookPage() {
                 <label htmlFor="duration" className="label">Duration</label>
                 <select id="duration" className="input" value={duration} onChange={(e) => update({ duration: Number(e.target.value), time: null })}>
                   {service.durations.map((d) => (
-                    <option key={d} value={d}>{d} minutes</option>
+                    <option key={d} value={d}>{d} minutes · {peso(priceFor(service, d))}</option>
                   ))}
                 </select>
               </div>

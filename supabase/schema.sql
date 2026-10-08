@@ -43,7 +43,8 @@ create table public.services (
   category    text not null,
   description text not null default '',
   durations   int[] not null default '{60}',
-  price       numeric(10,2) not null check (price >= 0),
+  price       numeric(10,2) not null check (price >= 0),  -- lowest price; "from ₱…" labels and fallback
+  prices      jsonb not null default '{}',                -- price per duration: {"60": 1150, "90": 1450}
   active      boolean not null default true,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
@@ -310,6 +311,7 @@ declare
   v_ther    uuid := p_therapist;
   v_name    text;
   v_booking bookings;
+  v_price   numeric;
 begin
   if auth.uid() is null then raise exception 'Please log in to book'; end if;
   if p_walk_in and v_role not in ('receptionist', 'admin') then
@@ -321,6 +323,8 @@ begin
   select * into v_service from services where id = p_service and active;
   if not found then raise exception 'Treatment not available'; end if;
   if not (p_duration = any (v_service.durations)) then raise exception 'Invalid duration'; end if;
+  -- Each duration has its own price; fall back to the base price if one is missing.
+  v_price := coalesce((v_service.prices ->> p_duration::text)::numeric, v_service.price);
 
   if v_ther is not null and not p_walk_in then
     -- Customers can only pick a therapist who is working then; staff may override for walk-ins.
@@ -352,7 +356,7 @@ begin
                           starts_at, ends_at, price, status, source, created_by)
     values (case when p_walk_in then null else auth.uid() end,
             coalesce(nullif(p_client_name, ''), v_name, 'Guest'),
-            p_client_phone, p_service, v_ther, p_starts_at, v_ends, v_service.price,
+            p_client_phone, p_service, v_ther, p_starts_at, v_ends, v_price,
             case when p_walk_in then 'confirmed' else 'pending_payment' end::booking_status,
             case when p_walk_in then 'walk_in' else 'online' end::booking_source,
             auth.uid())
@@ -366,12 +370,12 @@ begin
   -- Walk-ins pay at the counter, so record the payment as already verified.
   if p_walk_in then
     insert into payments (booking_id, method, amount, status, verified_by, verified_at)
-    values (v_booking.id, p_payment_method, v_service.price, 'verified', auth.uid(), now());
+    values (v_booking.id, p_payment_method, v_price, 'verified', auth.uid(), now());
   end if;
 
   perform public.log_activity('booking',
     case when p_walk_in then 'Encoded walk-in ' else 'Booked ' end || v_service.name || ' (' || v_booking.code || ')',
-    v_service.price, v_booking.id);
+    v_price, v_booking.id);
   return v_booking;
 end $$;
 
@@ -527,17 +531,17 @@ create policy "owners and staff read proofs" on storage.objects
          and ((storage.foldername(name))[1] = auth.uid()::text or public.is_staff()));
 
 -- ---------- seed data ----------
-insert into public.services (slug, name, category, description, durations, price) values
+insert into public.services (slug, name, category, description, durations, price, prices) values
   ('hilot-renewal', 'Hilot Renewal Ritual', 'Signature Ritual',
-   'An ancestral Filipino healing massage using warm coconut oil and banana leaf to release blocked energy.', '{60,90}', 1450),
+   'An ancestral Filipino healing massage using warm coconut oil and banana leaf to release blocked energy.', '{60,90}', 1150, '{"60": 1150, "90": 1450}'),
   ('ginhawa-deep-release', 'Ginhawa Deep Release', 'Massage Therapy',
-   'Focused deep-tissue work for chronic tension, combined with calming aromatherapy.', '{60,90}', 1450),
+   'Focused deep-tissue work for chronic tension, combined with calming aromatherapy.', '{60,90}', 1150, '{"60": 1150, "90": 1450}'),
   ('dalisay-facial', 'Dalisay Botanical Facial', 'Facial Care',
-   'A nourishing botanical facial with local calamansi and malunggay extracts to brighten and restore.', '{60}', 1250),
+   'A nourishing botanical facial with local calamansi and malunggay extracts to brighten and restore.', '{60}', 1250, '{"60": 1250}'),
   ('swedish', 'Swedish Massage', 'Massage Therapy',
-   'Long, flowing strokes that ease muscle tension and improve circulation.', '{60}', 750),
+   'Long, flowing strokes that ease muscle tension and improve circulation.', '{60}', 750, '{"60": 750}'),
   ('foot-reflexology', 'Foot Reflexology', 'Body Care',
-   'Pressure-point therapy on the feet to relieve fatigue and restore balance.', '{30,60}', 450);
+   'Pressure-point therapy on the feet to relieve fatigue and restore balance.', '{30,60}', 300, '{"30": 300, "60": 450}');
 
 insert into public.therapists (full_name, title, specialties, work_days, shift_start, shift_end, commission_rate, status) values
   ('Liza Mendoza',       'Senior Hilot Therapist', '{Hilot,Ventosa,Lymphatic}', 'Mon – Sat', '09:00', '17:00', 0.40, 'On duty'),
@@ -626,7 +630,8 @@ begin
         k := k + 1;
         v_start := ((v_today + d) + v_slots[j]) at time zone 'Asia/Manila';
         v_sid   := v_svc[1 + (i + j + d + 7) % array_length(v_svc, 1)];
-        select durations[array_upper(durations, 1)], price into v_dur, v_price from services where id = v_sid;
+        select durations[array_upper(durations, 1)], coalesce((prices ->> durations[array_upper(durations, 1)]::text)::numeric, price)
+          into v_dur, v_price from services where id = v_sid;
         v_source := case when k % 4 = 0 then 'walk_in' else 'online' end;
         v_cid    := case when v_source = 'walk_in' then null else v_cust[1 + k % array_length(v_cust, 1)] end;
         v_name   := coalesce((select full_name from profiles where id = v_cid),
@@ -663,7 +668,7 @@ begin
 
   -- Patricia's own story: a past facial and an upcoming hilot ritual.
   v_start := ((v_today + 3) + time '14:30') at time zone 'Asia/Manila';
-  select id, price into v_sid, v_price from services where slug = 'hilot-renewal';
+  select id, coalesce((prices ->> '90')::numeric, price) into v_sid, v_price from services where slug = 'hilot-renewal';
   insert into bookings (customer_id, client_name, service_id, therapist_id, starts_at, ends_at, price, status, source, created_by)
   values (v_pat, 'Patricia Diamante', v_sid, v_ther[2], v_start, v_start + interval '90 minutes', v_price, 'confirmed', 'online', v_pat)
   returning id into v_bid;

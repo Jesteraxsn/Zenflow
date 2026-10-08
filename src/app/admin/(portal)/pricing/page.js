@@ -6,6 +6,7 @@ import AccordionPanel from "@/components/AccordionPanel";
 import { ErrorBox, Loading, Toast } from "@/components/States";
 import { getServices, getSettings, logActivity, saveSetting, updateServicePrice } from "@/lib/api";
 import { peso } from "@/lib/format";
+import { priceFor, toServicePricing } from "@/lib/pricing";
 import useAsync from "@/lib/useAsync";
 import useToast from "@/lib/useToast";
 
@@ -33,15 +34,19 @@ export default function PricingControl() {
   const feeValues = fees ?? settings.fees ?? {};
   const promoValues = promo ?? settings.promo ?? {};
   const bankValues = bank ?? settings.bank_details ?? {};
-  const priceOf = (s) => prices[s.id] ?? Number(s.price);
-  const changed = services.filter((s) => priceOf(s) !== Number(s.price));
+  // Edits are keyed "serviceId:duration" so each duration's price can change on its own.
+  const priceOf = (s, d) => prices[`${s.id}:${d}`] ?? priceFor(s, d);
+  const isChanged = (s, d) => priceOf(s, d) !== priceFor(s, d);
+  const changed = services.filter((s) => s.durations.some((d) => isChanged(s, d)));
   const dirty = changed.length > 0 || fees || promo || bank;
 
   async function saveAll() {
     setSaving(true);
     setSaveError(null);
     try {
-      for (const s of changed) await updateServicePrice(s, priceOf(s));
+      for (const s of changed) {
+        await updateServicePrice(s, toServicePricing(s.durations.map((d) => ({ duration: d, price: priceOf(s, d) }))));
+      }
       if (fees) await saveSetting("fees", fees);
       if (promo) await saveSetting("promo", promo);
       if (bank) await saveSetting("bank_details", bank);
@@ -66,24 +71,35 @@ export default function PricingControl() {
       content: (
         <table className="w-full text-left text-xs">
           <thead className="text-[10px] uppercase tracking-wider text-muted">
-            <tr><th className="py-2">Treatment</th><th className="py-2">Current</th><th className="py-2">New price (₱)</th></tr>
+            <tr><th className="py-2">Treatment</th><th className="py-2">Duration</th><th className="py-2">Current</th><th className="py-2">New price (₱)</th></tr>
           </thead>
           <tbody className="divide-y divide-line">
-            {services.map((s) => (
-              <tr key={s.id}>
-                <td className="py-2.5 font-medium">{s.name}{!s.active && <span className="ml-2 text-[10px] text-muted">(hidden)</span>}</td>
-                <td className="py-2.5 text-muted">{peso(s.price)}</td>
-                <td className="py-2.5">
-                  <input
-                    type="number"
-                    min="0"
-                    className={`input w-32 py-1.5 ${priceOf(s) !== Number(s.price) ? "border-forest bg-sage" : ""}`}
-                    value={priceOf(s)}
-                    onChange={(e) => setPrices({ ...prices, [s.id]: Number(e.target.value) })}
-                  />
-                </td>
-              </tr>
-            ))}
+            {services.flatMap((s) =>
+              [...s.durations].sort((a, b) => a - b).map((d, i) => (
+                <tr key={`${s.id}:${d}`}>
+                  <td className="py-2.5 font-medium">
+                    {i === 0 && (
+                      <>
+                        {s.name}
+                        {!s.active && <span className="ml-2 text-[10px] text-muted">(hidden)</span>}
+                      </>
+                    )}
+                  </td>
+                  <td className="py-2.5 text-muted">{d} min</td>
+                  <td className="py-2.5 text-muted">{peso(priceFor(s, d))}</td>
+                  <td className="py-2.5">
+                    <input
+                      type="number"
+                      min="0"
+                      aria-label={`${s.name}, ${d} minutes`}
+                      className={`input w-32 py-1.5 ${isChanged(s, d) ? "border-forest bg-sage" : ""}`}
+                      value={priceOf(s, d)}
+                      onChange={(e) => setPrices({ ...prices, [`${s.id}:${d}`]: Number(e.target.value) })}
+                    />
+                  </td>
+                </tr>
+              )),
+            )}
           </tbody>
         </table>
       ),
