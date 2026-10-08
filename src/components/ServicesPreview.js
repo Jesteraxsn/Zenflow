@@ -1,7 +1,7 @@
 "use client";
 
 import { getServices } from "@/lib/api";
-import { peso } from "@/lib/format";
+import { fromPrice } from "@/lib/pricing";
 import useAsync from "@/lib/useAsync";
 
 export default function ServicesPreview() {
@@ -17,7 +17,7 @@ export default function ServicesPreview() {
             <span className="font-semibold">{s.name}</span>
             <span className="ml-2 text-xs text-muted">({s.durations.join(" / ")} mins)</span>
           </span>
-          <span className="font-semibold">{peso(s.price)}</span>
+          <span className="font-semibold">{fromPrice(s)}</span>
         </li>
       ))}
     </ul>

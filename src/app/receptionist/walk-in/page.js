@@ -7,13 +7,19 @@ import Icon from "@/components/Icon";
 import { ErrorBox, Loading } from "@/components/States";
 import { createBooking, getBusySlots, getServices, getTherapists } from "@/lib/api";
 import { bookableTherapists, slotAvailability } from "@/lib/availability";
-import { PAYMENT_METHODS, TIME_SLOTS } from "@/lib/constants";
-import { longDate, peso, timeOf, todayKey } from "@/lib/format";
+import { PAYMENT_METHODS } from "@/lib/constants";
+import { hhmmOf, longDate, peso, timeOf, todayKey } from "@/lib/format";
+import { fromPrice, priceFor } from "@/lib/pricing";
 import useAsync from "@/lib/useAsync";
+import useNow from "@/lib/useNow";
+
+const freeLabel = { off: "Off shift", booked: "Busy", past: "Time passed" };
 
 export default function WalkInPage() {
+  const now = useNow(30000);
   const today = todayKey();
-  const [form, setForm] = useState({ client: "", phone: "", serviceId: "", duration: null, therapistId: "any", date: today, time: "", payment: "cash" });
+  // Any start time can be typed in; it defaults to the current time.
+  const [form, setForm] = useState(() => ({ client: "", phone: "", serviceId: "", duration: null, therapistId: "any", date: today, time: hhmmOf(), payment: "cash" }));
   const [done, setDone] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -29,8 +35,14 @@ export default function WalkInPage() {
   const duration = service.durations.includes(form.duration) ? form.duration : service.durations.at(-1);
   const staff = bookableTherapists(therapists, form.date);
   const therapistId = form.therapistId === "any" ? null : form.therapistId;
-  const availability = slotAvailability({ date: form.date, slots: TIME_SLOTS, duration, busy: busy.data ?? [], therapists: staff, therapistId });
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value, ...(k !== "client" && k !== "phone" && k !== "payment" ? { time: "" } : {}) });
+  // Who could take a session at the chosen time (on shift for the whole session and not already booked)?
+  // A few minutes in the past is fine, since the guest may have arrived just before it was encoded.
+  const freeAt = (id) =>
+    form.time
+      ? slotAvailability({ date: form.date, slots: [{ value: form.time }], duration, busy: busy.data ?? [], therapists: staff, therapistId: id, now: new Date(now - 15 * 60000) })[form.time]
+      : { available: false, reason: "none" };
+  const chosenFree = freeAt(therapistId);
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   async function submit(e) {
     e.preventDefault();
@@ -74,7 +86,7 @@ export default function WalkInPage() {
           {longDate(done.starts_at)} at {timeOf(done.starts_at)} · {peso(done.price)} paid ({PAYMENT_METHODS[form.payment]})
         </p>
         <div className="mt-6 flex justify-center gap-3">
-          <button onClick={() => { setDone(null); setForm({ ...form, client: "", phone: "", time: "" }); }} className="btn-primary">
+          <button onClick={() => { setDone(null); setForm({ ...form, client: "", phone: "", date: todayKey(), time: hhmmOf() }); }} className="btn-primary">
             Encode another
           </button>
           <Link href="/receptionist" className="btn-outline">Back to today</Link>
@@ -93,51 +105,43 @@ export default function WalkInPage() {
             <input required className="input" value={form.client} onChange={set("client")} placeholder="Full name" />
           </div>
           <div>
-            <label className="label">Mobile number</label>
+            <label className="label">Mobile number <span className="font-normal normal-case text-muted">(optional)</span></label>
             <input className="input" value={form.phone} onChange={set("phone")} placeholder="09XX XXX XXXX" />
           </div>
           <div>
             <label className="label">Treatment</label>
             <select className="input" value={service.id} onChange={set("serviceId")}>
-              {services.map((s) => <option key={s.id} value={s.id}>{s.name} · {peso(s.price)}</option>)}
+              {services.map((s) => <option key={s.id} value={s.id}>{s.name} · {fromPrice(s)}</option>)}
             </select>
           </div>
           <div>
             <label className="label">Duration</label>
-            <select className="input" value={duration} onChange={(e) => setForm({ ...form, duration: Number(e.target.value), time: "" })}>
-              {service.durations.map((d) => <option key={d} value={d}>{d} minutes</option>)}
+            <select className="input" value={duration} onChange={(e) => setForm({ ...form, duration: Number(e.target.value) })}>
+              {service.durations.map((d) => <option key={d} value={d}>{d} minutes · {peso(priceFor(service, d))}</option>)}
             </select>
           </div>
           <div>
             <label className="label">Therapist</label>
             <select className="input" value={form.therapistId} onChange={set("therapistId")}>
-              <option value="any">Any available (auto-assign)</option>
-              {staff.map((t) => <option key={t.id} value={t.id}>{t.full_name} · {t.status}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">Date</label>
-            <input type="date" min={today} className="input" value={form.date} onChange={set("date")} />
-          </div>
-          <div className="sm:col-span-2">
-            <p className="label">Time slot</p>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-7">
-              {TIME_SLOTS.map((t) => {
-                const a = availability[t.value] ?? {};
+              <option value="any">Any free therapist (auto-assign)</option>
+              {staff.map((t) => {
+                const a = freeAt(t.id);
                 return (
-                  <button
-                    key={t.value}
-                    type="button"
-                    disabled={!a.available}
-                    onClick={() => setForm({ ...form, time: t.value })}
-                    className={`rounded-md py-2 text-xs ${
-                      form.time === t.value ? "bg-forest text-white" : a.available ? "bg-sand hover:bg-sage" : "bg-sand/50 text-muted/50 line-through"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
+                  <option key={t.id} value={t.id} disabled={!a.available}>
+                    {t.full_name}{form.time && ` · ${a.available ? "Free" : freeLabel[a.reason] ?? "Unavailable"}`}
+                  </option>
                 );
               })}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label htmlFor="date" className="label">Date</label>
+              <input id="date" type="date" min={today} className="input px-2" value={form.date} onChange={set("date")} />
+            </div>
+            <div>
+              <label htmlFor="time" className="label">Start time</label>
+              <input id="time" type="time" required className="input px-2" value={form.time} onChange={set("time")} />
             </div>
           </div>
           <div className="sm:col-span-2">
@@ -157,14 +161,25 @@ export default function WalkInPage() {
           <h2 className="font-serif text-2xl">Walk-in summary</h2>
           <p className="mt-4 text-sm font-semibold">{service.name}</p>
           <p className="text-xs text-muted">{longDate(form.date)}</p>
-          <p className="text-xs text-muted">{form.time ? TIME_SLOTS.find((t) => t.value === form.time)?.label : "No time selected"} · {duration} minutes</p>
+          <p className="text-xs text-muted">{form.time ? timeOf(`${form.date}T${form.time}:00+08:00`) : "No time selected"} · {duration} minutes</p>
           <p className="text-xs text-muted">{therapistId ? staff.find((t) => t.id === therapistId)?.full_name : "Auto-assigned therapist"}</p>
           <div className="mt-5 border-t border-line pt-4">
             <p className="text-xs text-muted">Amount to collect</p>
-            <p className="font-serif text-3xl">{peso(service.price)}</p>
+            <p className="font-serif text-3xl">{peso(priceFor(service, duration))}</p>
           </div>
+          {!chosenFree.available && (
+            <p className="mt-3 text-xs text-rose">
+              {!form.time
+                ? "Pick a start time."
+                : chosenFree.reason === "past"
+                  ? "That time has already passed."
+                  : therapistId
+                    ? "That therapist can't take a session at that time."
+                    : "No therapist is free at that time for this treatment."}
+            </p>
+          )}
           {saveError && <p className="mt-3 text-xs text-rose">{saveError.message}</p>}
-          <button type="submit" disabled={!form.time || !form.client.trim() || saving} className="btn-primary mt-5 w-full">
+          <button type="submit" disabled={!chosenFree.available || !form.client.trim() || saving} className="btn-primary mt-5 w-full">
             {saving ? "Saving…" : "Save walk-in booking"}
           </button>
         </aside>

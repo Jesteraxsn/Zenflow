@@ -202,8 +202,16 @@ export default function TherapistManagement() {
                 <label className="label">Specialties (comma separated)</label>
                 <input
                   className="input"
-                  value={selected.specialties.join(", ")}
-                  onChange={set("specialties", (v) => v.split(",").map((s) => s.trim()).filter(Boolean))}
+                  placeholder="e.g. Hilot, Deep tissue, Swedish"
+                  // Keep the raw text while typing so commas and spaces aren't swallowed; the list is derived from it.
+                  value={selected.specialtiesText ?? selected.specialties.join(", ")}
+                  onChange={(e) =>
+                    setForm({
+                      ...selected,
+                      specialtiesText: e.target.value,
+                      specialties: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                    })
+                  }
                 />
               </div>
               <div className="grid grid-cols-3 gap-2">

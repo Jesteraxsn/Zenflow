@@ -7,7 +7,7 @@ import Icon from "@/components/Icon";
 import { ErrorBox, Loading } from "@/components/States";
 import { getServices } from "@/lib/api";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
-import { peso } from "@/lib/format";
+import { fromPrice, priceBreakdown } from "@/lib/pricing";
 import useAsync from "@/lib/useAsync";
 import { useBooking } from "@/context/BookingContext";
 
@@ -66,8 +66,8 @@ export default function ServicesPage() {
               </div>
               <div className="flex shrink-0 flex-row items-center justify-between gap-4 sm:flex-col sm:items-end">
                 <div className="sm:text-right">
-                  <p className="font-serif text-xl">{peso(s.price)}</p>
-                  <p className="text-[11px] text-muted">{s.durations.join(" / ")} minutes</p>
+                  <p className="font-serif text-xl">{fromPrice(s)}</p>
+                  <p className="text-[11px] text-muted">{priceBreakdown(s)}</p>
                 </div>
                 <button onClick={() => select(s)} className="btn-primary px-5 py-2.5 text-[10px]">
                   Select &amp; schedule <Icon name="arrow" size={13} />

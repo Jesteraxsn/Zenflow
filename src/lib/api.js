@@ -1,6 +1,7 @@
 // Every read/write the app makes to Supabase lives here.
 import { supabase } from "./supabase";
 import { slugify, startsAtISO } from "./format";
+import { priceBreakdown } from "./pricing";
 
 function ok({ data, error }) {
   if (error) throw new Error(error.message);
@@ -170,6 +171,7 @@ export async function saveService(service) {
     category: service.category,
     description: service.description,
     durations: service.durations,
+    prices: service.prices,
     price: Number(service.price),
     active: service.active,
   };
@@ -181,13 +183,14 @@ export async function saveService(service) {
   const saved = ok(
     await supabase.from("services").insert({ ...record, slug: `${slugify(record.name)}-${Date.now().toString(36)}` }).select().single(),
   );
-  await logActivity("pricing", `Added service: ${saved.name} (₱${saved.price})`);
+  await logActivity("pricing", `Added service: ${saved.name} (${priceBreakdown(saved)})`);
   return saved;
 }
 
-export async function updateServicePrice(service, price) {
-  ok(await supabase.from("services").update({ price }).eq("id", service.id));
-  await logActivity("pricing", `Updated price: ${service.name} ₱${service.price} → ₱${price}`);
+// `pricing` is { durations, prices, price } from toServicePricing().
+export async function updateServicePrice(service, pricing) {
+  ok(await supabase.from("services").update({ prices: pricing.prices, price: pricing.price }).eq("id", service.id));
+  await logActivity("pricing", `Updated price: ${service.name} ${priceBreakdown(service)} → ${priceBreakdown({ ...service, ...pricing })}`);
 }
 
 export async function saveSetting(key, value) {

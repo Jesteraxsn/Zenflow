@@ -27,6 +27,11 @@ export function startsAtISO(key, hhmm) {
   return `${key}T${hhmm}:00+08:00`;
 }
 
+// Manila wall-clock "HH:MM" for a moment (default: now).
+export function hhmmOf(ts = Date.now()) {
+  return new Date(ts).toLocaleTimeString("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
 export function timeOf(ts) {
   return new Date(ts).toLocaleTimeString("en-PH", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
 }
