@@ -6,6 +6,7 @@ const nav = [
   { href: "/admin/services", label: "Services" },
   { href: "/admin/therapists", label: "Therapists" },
   { href: "/admin/clients", label: "Clients" },
+  { href: "/admin/staff", label: "Staff accounts" },
   { href: "/admin/pricing", label: "Pricing" },
   { href: "/admin/reports", label: "Financial reports" },
   { href: "/admin/logs", label: "System logs" },
