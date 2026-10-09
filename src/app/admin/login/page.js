@@ -11,7 +11,7 @@ export default function StaffLoginPage() {
     <>
       <header className="border-b border-line bg-card">
         <div className="mx-auto flex h-16 max-w-7xl items-center px-4 sm:px-6">
-          <Logo href="/" mark subtitle="Staff portal · Powered by ZenFlow" />
+          <Logo href="/" mark="zenflow" subtitle="Staff portal · Powered by ZenFlow" />
         </div>
       </header>
       <main className="flex flex-1 items-center justify-center px-4 py-16">
