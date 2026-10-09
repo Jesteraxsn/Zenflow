@@ -28,7 +28,7 @@ export default function PortalShell({ nav, home, title, children }) {
     <>
       <header className="border-b border-line bg-card">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-6 px-4 sm:px-6">
-          <Logo href={home} mark subtitle={`${title} · Powered by ZenFlow`} />
+          <Logo href={home} mark="zenflow" subtitle={`${title} · Powered by ZenFlow`} />
           <div className="flex items-center gap-4">
             <Link href="/" className="hidden text-[11px] text-muted hover:text-forest sm:inline" target="_blank">
               View customer site ↗
