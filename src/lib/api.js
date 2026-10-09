@@ -158,17 +158,21 @@ export async function getStaffAccounts() {
   return ok(await supabase.from("profiles").select("id, full_name, email, phone, role").in("role", ["admin", "receptionist"]).order("role").order("full_name"));
 }
 
-// Email/password changes need Supabase's admin API, so they go through a server route.
-export async function updateStaffLogin(id, { email, password }) {
+// Creating, changing and removing logins needs Supabase's admin API, so these go through a server route.
+async function staffRoute(method, body) {
   const res = await fetch("/api/admin/staff", {
-    method: "PATCH",
+    method,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, email, password }),
+    body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "Could not save the changes.");
   return data;
 }
+
+export const addReceptionist = ({ fullName, email, phone, password }) => staffRoute("POST", { fullName, email, phone, password });
+export const updateStaffLogin = (id, { email, password }) => staffRoute("PATCH", { id, email, password });
+export const removeReceptionist = (id) => staffRoute("DELETE", { id });
 
 export async function countNewClients(sinceISO) {
   const { count, error } = await supabase
