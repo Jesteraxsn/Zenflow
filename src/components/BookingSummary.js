@@ -4,7 +4,7 @@ import { priceFor } from "@/lib/pricing";
 
 export const slotLabel = (value) => TIME_SLOTS.find((s) => s.value === value)?.label ?? value;
 
-// Right-hand summary card used on the booking and checkout steps.
+
 export default function BookingSummary({ service, therapistName, date, time, duration, title = "Your booking", children }) {
   return (
     <aside className="card h-fit p-6 lg:sticky lg:top-6">
