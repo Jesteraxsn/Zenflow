@@ -26,7 +26,7 @@ export async function signUp({ fullName, email, phone, password }) {
     options: { data: { full_name: fullName, phone } },
   });
   if (error) throw new Error(error.message);
-  // Demo build auto-confirms accounts, so sign in straight away if no session came back.
+  
   if (!data.session) await signIn(email, password);
 }
 
