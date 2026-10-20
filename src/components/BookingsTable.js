@@ -7,6 +7,7 @@ import { ErrorBox, Loading, Toast } from "./States";
 import { cancelBooking, deleteBooking, getBookings, proofUrl, setBookingStatus, verifyPayment } from "@/lib/api";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { dateKey, peso, shortDate, timeOf, todayKey } from "@/lib/format";
+import { addonLabel } from "@/lib/pricing";
 import useAsync from "@/lib/useAsync";
 import useToast from "@/lib/useToast";
 
@@ -120,7 +121,12 @@ export default function BookingsTable({ canDelete = false, initialTab = "verify"
                       {b.client_name}
                       {b.client_phone && <span className="block text-[10px] text-muted">{b.client_phone}</span>}
                     </td>
-                    <td className="px-4 py-3">{b.service?.name}</td>
+                    <td className="px-4 py-3">
+                      {b.service?.name}
+                      {b.addons?.length > 0 && <span className="block text-[10px] text-muted">+ {b.addons.map(addonLabel).join(", ")}</span>}
+                      {b.home_address && <span className="block text-[10px] font-semibold text-bark">Home: {b.home_address}</span>}
+                      {b.discount_label && <span className="block text-[10px] text-forest">{b.discount_label} (−{peso(b.discount_amount)})</span>}
+                    </td>
                     <td className="px-4 py-3 text-muted">{b.therapist?.full_name}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{shortDate(b.starts_at)} · {timeOf(b.starts_at)}</td>
                     <td className="px-4 py-3">

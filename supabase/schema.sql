@@ -2,6 +2,7 @@ create extension if not exists btree_gist;
 create extension if not exists pgcrypto with schema extensions;
 
 drop function if exists public.create_booking cascade;
+drop function if exists public.quote_booking cascade;
 drop function if exists public.submit_payment cascade;
 drop function if exists public.verify_payment cascade;
 drop function if exists public.cancel_booking cascade;
@@ -88,6 +89,10 @@ create table public.bookings (
   source       public.booking_source not null default 'online',
   created_by   uuid references public.profiles (id) on delete set null,
   hold_expires_at timestamptz,               -- set when a payment is rejected; otherwise 30 min from created_at
+  addons       text[] not null default '{}', -- 'aromatherapy' | 'hotStone' | 'homeService'
+  home_address text,
+  discount_label  text,                      -- e.g. 'Senior/PWD 20%' or 'Promo GINHAWA10 10%'
+  discount_amount numeric(10,2) not null default 0,
   created_at   timestamptz not null default now(),
   check (ends_at > starts_at),
   -- Conflict detection: a therapist can never hold two live bookings that overlap.
@@ -300,6 +305,59 @@ as $$
      and (p_end   at time zone 'Asia/Manila')::time <= t.shift_end
 $$;
 
+-- The price for a booking: duration price + add-on fees − the better of promo or senior/PWD
+-- (they don't combine). Mirrors quote() in src/lib/pricing.js; this is the one that counts.
+create or replace function public.quote_booking(
+  p_service  uuid,
+  p_duration int,
+  p_addons   text[] default '{}',
+  p_promo    text default null,
+  p_senior   boolean default false)
+returns table (base numeric, addons_total numeric, discount_label text, discount_amount numeric, total numeric)
+language plpgsql stable security definer set search_path = public
+as $$
+declare
+  v_service   services;
+  v_fees      jsonb := coalesce((select value from settings where key = 'fees'), '{}');
+  v_promo     jsonb := coalesce((select value from settings where key = 'promo'), '{}');
+  v_addon     text;
+  v_promo_pct numeric := 0;
+  v_sen_pct   numeric := 0;
+begin
+  select * into v_service from services where id = p_service;
+  if not found then raise exception 'Treatment not available'; end if;
+
+  base := coalesce((v_service.prices ->> p_duration::text)::numeric, v_service.price);
+  addons_total := 0;
+  foreach v_addon in array coalesce(p_addons, '{}') loop
+    if v_addon not in ('aromatherapy', 'hotStone', 'homeService') then
+      raise exception 'Unknown add-on: %', v_addon;
+    end if;
+    addons_total := addons_total + coalesce((v_fees ->> v_addon)::numeric, 0);
+  end loop;
+
+  if nullif(btrim(p_promo), '') is not null then
+    if coalesce((v_promo ->> 'active')::boolean, false)
+       and upper(btrim(p_promo)) = upper(coalesce(v_promo ->> 'code', '')) then
+      v_promo_pct := coalesce((v_promo ->> 'percent')::numeric, 0);
+    else
+      raise exception 'That promo code isn''t valid.';
+    end if;
+  end if;
+  if p_senior then v_sen_pct := coalesce((v_promo ->> 'senior')::numeric, 0); end if;
+
+  if greatest(v_promo_pct, v_sen_pct) > 0 then
+    discount_label := case when v_sen_pct >= v_promo_pct
+                           then 'Senior/PWD ' || v_sen_pct || '%'
+                           else 'Promo ' || upper(btrim(p_promo)) || ' ' || v_promo_pct || '%' end;
+    discount_amount := round((base + addons_total) * greatest(v_promo_pct, v_sen_pct) / 100, 2);
+  else
+    discount_amount := 0;
+  end if;
+  total := base + addons_total - discount_amount;
+  return next;
+end $$;
+
 -- Creates a booking. p_therapist null = "any available therapist" (round-robin).
 -- Customers book for themselves (online, pending_payment); staff can encode walk-ins.
 create or replace function public.create_booking(
@@ -310,7 +368,11 @@ create or replace function public.create_booking(
   p_client_name  text default null,
   p_client_phone text default null,
   p_walk_in      boolean default false,
-  p_payment_method text default 'cash')
+  p_payment_method text default 'cash',
+  p_addons       text[] default '{}',
+  p_promo        text default null,
+  p_senior       boolean default false,
+  p_home_address text default null)
 returns public.bookings
 language plpgsql security definer set search_path = public
 as $$
@@ -321,7 +383,7 @@ declare
   v_ther    uuid := p_therapist;
   v_name    text;
   v_booking bookings;
-  v_price   numeric;
+  v_quote   record;
 begin
   if auth.uid() is null then raise exception 'Please log in to book'; end if;
   if p_walk_in and v_role not in ('receptionist', 'admin') then
@@ -333,8 +395,10 @@ begin
   select * into v_service from services where id = p_service and active;
   if not found then raise exception 'Treatment not available'; end if;
   if not (p_duration = any (v_service.durations)) then raise exception 'Invalid duration'; end if;
-  -- Each duration has its own price; fall back to the base price if one is missing.
-  v_price := coalesce((v_service.prices ->> p_duration::text)::numeric, v_service.price);
+  if 'homeService' = any (coalesce(p_addons, '{}')) and nullif(btrim(p_home_address), '') is null then
+    raise exception 'Please enter the address for home service.';
+  end if;
+  select * into v_quote from public.quote_booking(p_service, p_duration, p_addons, p_promo, p_senior);
 
   if v_ther is not null and not p_walk_in then
     -- Customers can only pick a therapist who is working then; staff may override for walk-ins.
@@ -363,13 +427,17 @@ begin
 
   begin
     insert into bookings (customer_id, client_name, client_phone, service_id, therapist_id,
-                          starts_at, ends_at, price, status, source, created_by)
+                          starts_at, ends_at, price, status, source, created_by,
+                          addons, home_address, discount_label, discount_amount)
     values (case when p_walk_in then null else auth.uid() end,
             coalesce(nullif(p_client_name, ''), v_name, 'Guest'),
-            p_client_phone, p_service, v_ther, p_starts_at, v_ends, v_price,
+            p_client_phone, p_service, v_ther, p_starts_at, v_ends, v_quote.total,
             case when p_walk_in then 'confirmed' else 'pending_payment' end::booking_status,
             case when p_walk_in then 'walk_in' else 'online' end::booking_source,
-            auth.uid())
+            auth.uid(),
+            coalesce(p_addons, '{}'),
+            case when 'homeService' = any (coalesce(p_addons, '{}')) then btrim(p_home_address) end,
+            v_quote.discount_label, v_quote.discount_amount)
     returning * into v_booking;
   exception when exclusion_violation then
     raise exception 'That slot was just taken. Please pick another time.';
@@ -380,14 +448,15 @@ begin
   -- Walk-ins pay at the counter, so record the payment as already verified.
   if p_walk_in then
     insert into payments (booking_id, method, amount, status, verified_by, verified_at)
-    values (v_booking.id, p_payment_method, v_price, 'verified', auth.uid(), now());
+    values (v_booking.id, p_payment_method, v_quote.total, 'verified', auth.uid(), now());
   end if;
 
   perform public.log_activity('booking',
     case when p_walk_in then 'Encoded walk-in ' else 'Booked ' end || v_service.name || ' (' || v_booking.code || ')',
-    v_price, v_booking.id);
+    v_quote.total, v_booking.id);
   return v_booking;
 end $$;
+
 
 -- Customer submits bank-transfer proof → booking awaits verification.
 create or replace function public.submit_payment(
@@ -548,6 +617,7 @@ revoke execute on function public.create_booking, public.submit_payment,
 grant execute on function public.create_booking, public.submit_payment,
   public.verify_payment, public.cancel_booking, public.log_activity to authenticated;
 grant execute on function public.get_busy_slots(date) to anon, authenticated;
+grant execute on function public.quote_booking(uuid, int, text[], text, boolean) to anon, authenticated;
 
 -- ---------- storage: payment proofs ----------
 insert into storage.buckets (id, name, public)

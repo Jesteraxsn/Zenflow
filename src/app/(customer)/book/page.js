@@ -7,11 +7,11 @@ import Calendar from "@/components/Calendar";
 import BookingSummary from "@/components/BookingSummary";
 import Icon from "@/components/Icon";
 import { ErrorBox, Loading } from "@/components/States";
-import { cancelBooking, createBooking, getBooking, getBusySlots, getServices, getTherapists } from "@/lib/api";
+import { cancelBooking, createBooking, getBooking, getBusySlots, getServices, getSettings, getTherapists } from "@/lib/api";
 import { bookableTherapists, slotAvailability } from "@/lib/availability";
 import { TIME_SLOTS } from "@/lib/constants";
 import { peso } from "@/lib/format";
-import { fromPrice, priceFor } from "@/lib/pricing";
+import { ADDONS, fromPrice, priceFor, promoValid, quote } from "@/lib/pricing";
 import useAsync from "@/lib/useAsync";
 import { useAuth } from "@/context/AuthContext";
 import { useBooking } from "@/context/BookingContext";
@@ -23,13 +23,13 @@ export default function BookPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
 
-  const catalog = useAsync(() => Promise.all([getServices(), getTherapists()]), []);
+  const catalog = useAsync(() => Promise.all([getServices(), getTherapists(), getSettings()]), []);
   const busy = useAsync(() => (draft.date ? getBusySlots(draft.date) : Promise.resolve([])), [draft.date], { pollMs: 20000 });
 
   if (catalog.loading) return <Loading label="Preparing the schedule…" />;
   if (catalog.error) return <ErrorBox error={catalog.error} onRetry={catalog.reload} />;
 
-  const [services, therapists] = catalog.data;
+  const [services, therapists, settings] = catalog.data;
   const service = services.find((s) => s.id === draft.serviceId) ?? services[0];
   const duration = service.durations.includes(draft.duration) ? draft.duration : service.durations.at(-1);
   const staff = bookableTherapists(therapists, draft.date ?? undefined);
@@ -46,7 +46,18 @@ export default function BookPage() {
       })
     : {};
   const selectedStillFree = draft.time && availability[draft.time]?.available;
-  const ready = draft.date && selectedStillFree && (draft.therapistMode === "any" || chosen);
+
+  // Extras and discounts (fees and promo come from Admin → Pricing; the database recomputes the price).
+  const fees = settings.fees ?? {};
+  const promo = settings.promo ?? {};
+  const addons = draft.addons ?? [];
+  const extras = { addons, promoCode: draft.promoCode ?? "", senior: Boolean(draft.senior) };
+  const price = quote(service, duration, extras, settings);
+  const promoBad = Boolean(extras.promoCode.trim()) && !promoValid(extras.promoCode, promo);
+  const addressMissing = addons.includes("homeService") && !draft.homeAddress?.trim();
+  const toggleAddon = (key) => update({ addons: addons.includes(key) ? addons.filter((a) => a !== key) : [...addons, key] });
+
+  const ready = draft.date && selectedStillFree && (draft.therapistMode === "any" || chosen) && !promoBad && !addressMissing;
 
   async function proceed() {
     if (!user) {
@@ -69,6 +80,8 @@ export default function BookPage() {
         time: draft.time,
         duration,
         therapistId: chosen?.id,
+        ...extras,
+        homeAddress: draft.homeAddress ?? "",
       });
       update({ serviceId: service.id, duration, bookingId: booking.id });
       router.push("/checkout");
@@ -90,7 +103,7 @@ export default function BookPage() {
       <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
         <div className="space-y-5">
           <section className="card space-y-5 p-6">
-            <div className="grid gap-4 sm:grid-cols-[1fr_160px]">
+            <div className="grid gap-4 sm:grid-cols-[1fr_210px]">
               <div>
                 <label htmlFor="service" className="label">Treatment</label>
                 <select
@@ -163,6 +176,44 @@ export default function BookPage() {
             </div>
           </section>
 
+          <section className="card grid gap-5 p-6 md:grid-cols-2">
+            <div>
+              <p className="label">Add-ons</p>
+              <div className="space-y-2">
+                {ADDONS.map((a) => (
+                  <label key={a.key} className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2.5 text-xs ${addons.includes(a.key) ? "border-forest bg-sage" : "border-line hover:border-forest"}`}>
+                    <span className="flex items-center gap-2">
+                      <input type="checkbox" className="accent-forest" checked={addons.includes(a.key)} onChange={() => toggleAddon(a.key)} />
+                      {a.label}
+                    </span>
+                    <span className="text-muted">+{peso(Number(fees[a.key] ?? 0))}</span>
+                  </label>
+                ))}
+              </div>
+              {addons.includes("homeService") && (
+                <div className="mt-3">
+                  <label htmlFor="homeAddress" className="label">Home service address</label>
+                  <textarea id="homeAddress" rows={2} className="input" placeholder="House no., street, barangay, city" value={draft.homeAddress ?? ""} onChange={(e) => update({ homeAddress: e.target.value })} />
+                </div>
+              )}
+            </div>
+            <div>
+              <label htmlFor="promoCode" className="label">Promo code</label>
+              <input id="promoCode" className="input uppercase" placeholder="Optional" value={draft.promoCode ?? ""} onChange={(e) => update({ promoCode: e.target.value })} />
+              {promoBad && <p className="mt-1 text-[11px] text-rose">That promo code isn&apos;t valid.</p>}
+              {Number(promo.senior) > 0 && (
+                <label className={`mt-3 flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2.5 text-xs ${draft.senior ? "border-forest bg-sage" : "border-line hover:border-forest"}`}>
+                  <input type="checkbox" className="mt-0.5 accent-forest" checked={Boolean(draft.senior)} onChange={(e) => update({ senior: e.target.checked })} />
+                  <span>
+                    Senior citizen / PWD discount ({promo.senior}%)
+                    <span className="block text-[11px] text-muted">Please present a valid Senior or PWD ID at the front desk.</span>
+                  </span>
+                </label>
+              )}
+              <p className="mt-2 text-[11px] text-muted">Discounts don&apos;t combine; we apply the bigger one.</p>
+            </div>
+          </section>
+
           <div className="grid gap-5 md:grid-cols-[1fr_240px]">
             <section className="card p-6">
               <Calendar value={draft.date} onChange={(date) => update({ date, time: null })} />
@@ -214,13 +265,21 @@ export default function BookPage() {
           date={draft.date}
           time={selectedStillFree ? draft.time : null}
           duration={duration}
+          addons={addons}
+          price={price}
         >
           {submitError && <p className="mt-4 text-xs text-rose">{submitError.message}</p>}
           <button disabled={!ready || submitting} onClick={proceed} className="btn-primary mt-5 w-full">
             {submitting ? "Holding your slot…" : user ? "Proceed to checkout" : "Log in to continue"} <Icon name="arrow" size={14} />
           </button>
           <p className="mt-2 text-center text-[11px] text-muted">
-            {ready ? "We'll hold this slot for 30 minutes while you pay." : "Choose a date and time to continue."}
+            {ready
+              ? "We'll hold this slot for 30 minutes while you pay."
+              : addressMissing
+                ? "Enter your address for home service."
+                : promoBad
+                  ? "Remove or fix the promo code to continue."
+                  : "Choose a date and time to continue."}
           </p>
         </BookingSummary>
       </div>

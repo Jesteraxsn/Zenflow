@@ -10,6 +10,7 @@ import { EmptyCard, ErrorBox, Loading } from "@/components/States";
 import { cancelBooking, getBooking } from "@/lib/api";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { longDate, peso, timeOf } from "@/lib/format";
+import { addonLabel } from "@/lib/pricing";
 import useAsync from "@/lib/useAsync";
 import { useBooking } from "@/context/BookingContext";
 
@@ -80,7 +81,9 @@ function StatusView() {
               ["Date", longDate(booking.starts_at)],
               ["Time", `${timeOf(booking.starts_at)} – ${timeOf(booking.ends_at)}`],
               ["Therapist", booking.therapist?.full_name],
-              ["Room", "Serenity Suite"],
+              booking.home_address ? ["Home service", booking.home_address] : ["Room", "Serenity Suite"],
+              ...(booking.addons?.length ? [["Add-ons", booking.addons.map(addonLabel).join(", ")]] : []),
+              ...(booking.discount_label ? [["Discount", `${booking.discount_label} (−${peso(booking.discount_amount)})`]] : []),
               ["Payment reference", payment?.reference || "—"],
               ["Payment method", payment ? PAYMENT_METHODS[payment.method] : "Not yet paid"],
             ].map(([k, v]) => (

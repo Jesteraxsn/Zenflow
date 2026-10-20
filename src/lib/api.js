@@ -57,7 +57,10 @@ export async function getBusySlots(dateKey) {
   return ok(await supabase.rpc("get_busy_slots", { p_day: dateKey }));
 }
 
-export async function createBooking({ serviceId, date, time, duration, therapistId, clientName, clientPhone, walkIn, paymentMethod }) {
+export async function createBooking({
+  serviceId, date, time, duration, therapistId, clientName, clientPhone, walkIn, paymentMethod,
+  addons = [], promoCode = "", senior = false, homeAddress = "",
+}) {
   return ok(
     await supabase
       .rpc("create_booking", {
@@ -69,6 +72,10 @@ export async function createBooking({ serviceId, date, time, duration, therapist
         p_client_phone: clientPhone || null,
         p_walk_in: Boolean(walkIn),
         p_payment_method: paymentMethod || "cash",
+        p_addons: addons,
+        p_promo: promoCode.trim() || null,
+        p_senior: Boolean(senior),
+        p_home_address: homeAddress.trim() || null,
       })
       .single(),
   );

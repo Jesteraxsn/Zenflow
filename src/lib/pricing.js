@@ -37,3 +37,30 @@ export function toServicePricing(rows) {
   const prices = Object.fromEntries(clean.map((r) => [String(r.duration), r.price]));
   return { durations, prices, price: durations.length ? Math.min(...durations.map((d) => prices[String(d)])) : 0 };
 }
+
+// Optional extras; fees come from the "fees" setting (Admin → Pricing).
+export const ADDONS = [
+  { key: "aromatherapy", label: "Aromatherapy oils" },
+  { key: "hotStone", label: "Hot stone therapy" },
+  { key: "homeService", label: "Home service (we come to you)" },
+];
+export const addonLabel = (key) => ADDONS.find((a) => a.key === key)?.label.replace(/ \(.*\)$/, "") ?? key;
+
+// Is this promo code currently valid? (Case-insensitive, like the database.)
+export const promoValid = (code, promo) =>
+  Boolean(code?.trim() && promo?.active && code.trim().toUpperCase() === String(promo.code ?? "").toUpperCase());
+
+// Price preview: duration price + add-on fees − the better of promo or senior/PWD (they don't combine).
+// Mirrors quote_booking() in supabase/schema.sql, which sets the price actually charged.
+export function quote(service, duration, { addons = [], promoCode = "", senior = false } = {}, settings = {}) {
+  const fees = settings.fees ?? {};
+  const promo = settings.promo ?? {};
+  const base = priceFor(service, duration);
+  const addonsTotal = addons.reduce((sum, key) => sum + Number(fees[key] ?? 0), 0);
+  const promoPct = promoValid(promoCode, promo) ? Number(promo.percent ?? 0) : 0;
+  const seniorPct = senior ? Number(promo.senior ?? 0) : 0;
+  const pct = Math.max(promoPct, seniorPct);
+  const discountLabel = pct ? (seniorPct >= promoPct ? `Senior/PWD ${seniorPct}%` : `Promo ${promoCode.trim().toUpperCase()} ${promoPct}%`) : null;
+  const discount = Math.round((base + addonsTotal) * pct) / 100;
+  return { base, addonsTotal, discountLabel, discount, total: base + addonsTotal - discount };
+}

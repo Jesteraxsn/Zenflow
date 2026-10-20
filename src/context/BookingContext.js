@@ -14,6 +14,10 @@ const emptyDraft = {
   therapistId: null,
   date: null, // "YYYY-MM-DD" (Manila)
   time: null, // "HH:MM"
+  addons: [], // "aromatherapy" | "hotStone" | "homeService"
+  homeAddress: "",
+  promoCode: "",
+  senior: false, // Senior citizen / PWD discount (ID checked at the front desk)
   bookingId: null, // set once the slot is held in the database
 };
 
