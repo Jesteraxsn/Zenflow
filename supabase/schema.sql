@@ -12,6 +12,7 @@ drop view if exists public.therapist_earnings;
 drop table if exists public.activity_logs cascade;
 drop table if exists public.payments cascade;
 drop table if exists public.bookings cascade;
+drop table if exists public.therapist_rates cascade;
 drop table if exists public.therapists cascade;
 drop table if exists public.services cascade;
 drop table if exists public.settings cascade;
@@ -59,11 +60,16 @@ create table public.therapists (
   work_days        text not null default 'Mon – Sat',
   shift_start      time not null default '09:00',
   shift_end        time not null default '18:00',
-  commission_rate  numeric(4,3) not null default 0.350 check (commission_rate between 0 and 1),
   status           text not null default 'On duty' check (status in ('On duty', 'On break', 'Off today')),
   active           boolean not null default true,
   last_assigned_at timestamptz,               -- drives round-robin "any therapist"
   created_at       timestamptz not null default now()
+);
+
+-- Commission rates are staff-only (RLS below), so they live apart from the public therapist list.
+create table public.therapist_rates (
+  therapist_id    uuid primary key references public.therapists (id) on delete cascade,
+  commission_rate numeric(4,3) not null default 0.350 check (commission_rate between 0 and 1)
 );
 
 create table public.bookings (
@@ -81,6 +87,7 @@ create table public.bookings (
   status       public.booking_status not null default 'pending_payment',
   source       public.booking_source not null default 'online',
   created_by   uuid references public.profiles (id) on delete set null,
+  hold_expires_at timestamptz,               -- set when a payment is rejected; otherwise 30 min from created_at
   created_at   timestamptz not null default now(),
   check (ends_at > starts_at),
   -- Conflict detection: a therapist can never hold two live bookings that overlap.
@@ -137,10 +144,12 @@ returns boolean
 language sql stable security definer set search_path = public
 as $$ select coalesce(public.app_role() in ('receptionist', 'admin'), false) $$;
 
+-- Runs with the caller's rights: staff calling it directly pass the RLS insert policy; the booking
+-- functions below (security definer, table owner) log customer actions without one.
 create or replace function public.log_activity(
   p_type text, p_action text, p_amount numeric default null, p_booking uuid default null)
 returns void
-language plpgsql security definer set search_path = public
+language plpgsql security invoker set search_path = public
 as $$
 declare v_name text; v_role text;
 begin
@@ -226,7 +235,8 @@ returns void
 language sql security definer set search_path = public
 as $$
   update bookings set status = 'cancelled'
-  where status = 'pending_payment' and created_at < now() - interval '30 minutes'
+  where status = 'pending_payment'
+    and coalesce(hold_expires_at, created_at + interval '30 minutes') < now()
 $$;
 
 -- Busy ranges for a day, without exposing who booked them.
@@ -417,7 +427,9 @@ begin
          verified_by = auth.uid(), verified_at = now()
    where id = p_payment;
   update bookings
-     set status = case when p_approve then 'confirmed' else 'pending_payment' end::booking_status
+     set status = case when p_approve then 'confirmed' else 'pending_payment' end::booking_status,
+         -- a rejected payment gives the customer 24 hours to upload a correct receipt
+         hold_expires_at = case when p_approve then hold_expires_at else now() + interval '24 hours' end
    where id = v_payment.booking_id
   returning code into v_code;
   perform public.log_activity('payment',
@@ -448,8 +460,9 @@ select t.id as therapist_id,
        t.full_name as therapist,
        count(b.id)::int as sessions,
        coalesce(sum(b.price), 0)::numeric(12,2) as gross,
-       coalesce(sum(b.price * t.commission_rate), 0)::numeric(12,2) as commission
+       coalesce(sum(b.price * r.commission_rate), 0)::numeric(12,2) as commission
 from therapists t
+left join therapist_rates r on r.therapist_id = t.id
 left join bookings b on b.therapist_id = t.id and b.status in ('confirmed', 'completed')
 group by t.id, t.full_name;
 
@@ -482,6 +495,26 @@ create policy "anyone reads active therapists" on public.therapists
 create policy "admin manages therapists" on public.therapists
   for all using (public.app_role() = 'admin') with check (public.app_role() = 'admin');
 
+-- therapist_rates: staff read, admin edits; every new therapist gets a default row
+alter table public.therapist_rates enable row level security;
+create policy "staff read rates" on public.therapist_rates
+  for select using (public.is_staff());
+create policy "admin manages rates" on public.therapist_rates
+  for all using (public.app_role() = 'admin') with check (public.app_role() = 'admin');
+
+create or replace function public.add_therapist_rate()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+begin
+  insert into therapist_rates (therapist_id) values (new.id) on conflict do nothing;
+  return new;
+end $$;
+
+create trigger therapists_add_rate
+  after insert on public.therapists
+  for each row execute function public.add_therapist_rate();
+
 -- bookings: writes go through RPCs; staff may edit/delete directly
 create policy "customer reads own bookings, staff all" on public.bookings
   for select using (customer_id = auth.uid() or public.is_staff());
@@ -497,6 +530,9 @@ create policy "customer reads own payments, staff all" on public.payments
     or exists (select 1 from public.bookings b where b.id = booking_id and b.customer_id = auth.uid()));
 
 -- activity logs: staff read; writes only via log_activity()
+create policy "staff writes own log entries" on public.activity_logs
+  for insert to authenticated
+  with check (public.is_staff() and actor_id = auth.uid());
 create policy "staff reads logs" on public.activity_logs
   for select using (public.is_staff());
 
@@ -543,12 +579,17 @@ insert into public.services (slug, name, category, description, durations, price
   ('foot-reflexology', 'Foot Reflexology', 'Body Care',
    'Pressure-point therapy on the feet to relieve fatigue and restore balance.', '{30,60}', 300, '{"30": 300, "60": 450}');
 
-insert into public.therapists (full_name, title, specialties, work_days, shift_start, shift_end, commission_rate, status) values
-  ('Liza Mendoza',       'Senior Hilot Therapist', '{Hilot,Ventosa,Lymphatic}', 'Mon – Sat', '09:00', '17:00', 0.40, 'On duty'),
-  ('Paolo dela Cruz',    'Massage Therapist',      '{"Deep tissue",Swedish}',   'Tue – Sun', '11:00', '19:00', 0.35, 'On duty'),
-  ('Marisol Villanueva', 'Facialist',              '{Facials,"Skin care"}',     'Mon – Fri', '10:00', '18:00', 0.35, 'On break'),
-  ('Ramon Bautista',     'Wellness Therapist',     '{Reflexology,Stretching}',  'Wed – Sun', '12:00', '20:00', 0.30, 'Off today'),
-  ('Joyce Navarro',      'Massage Therapist',      '{Swedish,Prenatal}',        'Mon – Sat', '13:00', '21:00', 0.35, 'On duty');
+insert into public.therapists (full_name, title, specialties, work_days, shift_start, shift_end, status) values
+  ('Liza Mendoza',       'Senior Hilot Therapist', '{Hilot,Ventosa,Lymphatic}', 'Mon – Sat', '09:00', '17:00', 'On duty'),
+  ('Paolo dela Cruz',    'Massage Therapist',      '{"Deep tissue",Swedish}',   'Tue – Sun', '11:00', '19:00', 'On duty'),
+  ('Marisol Villanueva', 'Facialist',              '{Facials,"Skin care"}',     'Mon – Fri', '10:00', '18:00', 'On break'),
+  ('Ramon Bautista',     'Wellness Therapist',     '{Reflexology,Stretching}',  'Wed – Sun', '12:00', '20:00', 'Off today'),
+  ('Joyce Navarro',      'Massage Therapist',      '{Swedish,Prenatal}',        'Mon – Sat', '13:00', '21:00', 'On duty');
+
+update public.therapist_rates r set commission_rate = v.rate
+from public.therapists t, (values ('Liza Mendoza', 0.40), ('Paolo dela Cruz', 0.35), ('Marisol Villanueva', 0.35),
+                                  ('Ramon Bautista', 0.30), ('Joyce Navarro', 0.35)) as v(name, rate)
+where r.therapist_id = t.id and t.full_name = v.name;
 
 insert into public.settings (key, value) values
   ('bank_details', '{"bank":"Bank of the Philippine Islands (BPI)","accountName":"Ginhawa Spa & Wellness Sanctuary Inc.","accountNumber":"0093 4426 7715","gcash":"0917 482 3361 · Ginhawa Spa"}'),

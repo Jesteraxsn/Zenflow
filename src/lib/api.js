@@ -37,8 +37,14 @@ export async function getServices({ includeInactive = false } = {}) {
   return ok(await q);
 }
 
+// Commission rates live in a staff-only table; for customers `commission_rate` comes back null.
+const withRate = ({ rate, ...t }) => ({ ...t, commission_rate: rate?.commission_rate ?? null });
+
 export async function getTherapists() {
-  return ok(await supabase.from("therapists").select("*").eq("active", true).order("full_name"));
+  const rows = ok(
+    await supabase.from("therapists").select("*, rate:therapist_rates(commission_rate)").eq("active", true).order("full_name"),
+  );
+  return rows.map(withRate);
 }
 
 export async function getSettings() {
@@ -225,17 +231,15 @@ export async function saveTherapist(therapist) {
     work_days: therapist.work_days,
     shift_start: therapist.shift_start,
     shift_end: therapist.shift_end,
-    commission_rate: Number(therapist.commission_rate),
     status: therapist.status,
   };
-  if (therapist.id) {
-    const saved = ok(await supabase.from("therapists").update(record).eq("id", therapist.id).select().single());
-    await logActivity("schedule", `Updated therapist profile: ${saved.full_name}`);
-    return saved;
-  }
-  const saved = ok(await supabase.from("therapists").insert(record).select().single());
-  await logActivity("schedule", `Added therapist: ${saved.full_name}`);
-  return saved;
+  const saved = therapist.id
+    ? ok(await supabase.from("therapists").update(record).eq("id", therapist.id).select().single())
+    : ok(await supabase.from("therapists").insert(record).select().single());
+  const commission_rate = Number(therapist.commission_rate);
+  ok(await supabase.from("therapist_rates").upsert({ therapist_id: saved.id, commission_rate }));
+  await logActivity("schedule", `${therapist.id ? "Updated therapist profile" : "Added therapist"}: ${saved.full_name}`);
+  return { ...saved, commission_rate };
 }
 
 export async function setTherapistStatus(therapist, status) {

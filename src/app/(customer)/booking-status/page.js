@@ -48,7 +48,10 @@ function StatusView() {
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!booking) return <EmptyCard title="Booking not found" href="/dashboard" cta="Go to my appointments" />;
 
-  const [eyebrow, title, subtitle] = headline[booking.status];
+  const rejected = booking.status === "pending_payment" && booking.payments?.some((p) => p.status === "rejected");
+  const [eyebrow, title, subtitle] = rejected
+    ? ["Payment not verified", "Please upload your receipt again.", "We couldn't verify your last payment. Your slot is still held for you."]
+    : headline[booking.status];
   const payment = booking.payments?.at(-1);
   const cancellable = ["pending_payment", "pending_verification", "confirmed"].includes(booking.status);
 

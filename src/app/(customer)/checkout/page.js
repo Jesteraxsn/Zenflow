@@ -58,7 +58,12 @@ export default function CheckoutPage() {
   );
   const booking = data?.[0];
   const bank = data?.[1]?.bank_details ?? {};
-  const deadline = booking ? new Date(booking.created_at).getTime() + HOLD_MINUTES * 60000 : null;
+  // A rejected payment extends the hold (hold_expires_at); otherwise it's 30 minutes from booking.
+  const deadline = booking
+    ? booking.hold_expires_at
+      ? new Date(booking.hold_expires_at).getTime()
+      : new Date(booking.created_at).getTime() + HOLD_MINUTES * 60000
+    : null;
   const remaining = useCountdown(deadline);
 
   if (!loaded || loading) return <Loading label="Loading your reservation…" />;
@@ -78,8 +83,11 @@ export default function CheckoutPage() {
   }
 
   const expired = remaining === 0;
-  const mm = String(Math.floor((remaining ?? 0) / 60000)).padStart(2, "0");
+  const hours = Math.floor((remaining ?? 0) / 3600000);
+  const mm = String(Math.floor(((remaining ?? 0) % 3600000) / 60000)).padStart(2, "0");
   const ss = String(Math.floor(((remaining ?? 0) % 60000) / 1000)).padStart(2, "0");
+  const left = hours ? `${hours}h ${mm}m` : `${mm}:${ss}`;
+  const rejected = booking.payments?.some((p) => p.status === "rejected");
 
   async function submit(e) {
     e.preventDefault();
@@ -104,14 +112,21 @@ export default function CheckoutPage() {
         subtitle="Your slot is confirmed once our front desk verifies your payment. Pay the exact amount, then submit your reference below."
         action={
           <span className={`badge ${expired ? "bg-rose/10 text-rose" : "bg-tan text-bark"}`}>
-            <Icon name="clock" size={12} /> {expired ? "Hold expired" : `Slot held · ${mm}:${ss}`}
+            <Icon name="clock" size={12} /> {expired ? "Hold expired" : `Slot held · ${left}`}
           </span>
         }
       />
 
+      {rejected && !expired && (
+        <div className="mb-5 rounded-lg border border-rose/30 bg-rose/5 px-4 py-3 text-xs text-rose">
+          We couldn&apos;t verify your last payment. Please check the amount and reference number, then upload your receipt again.
+          Your slot is held for {left}.
+        </div>
+      )}
+
       {expired && (
         <div className="mb-5 flex items-center justify-between rounded-lg border border-rose/30 bg-rose/5 px-4 py-3 text-xs text-rose">
-          <span>Your 30-minute hold has ended and the slot may be released.</span>
+          <span>Your hold has ended and the slot may be released.</span>
           <button onClick={() => { update({ bookingId: null, time: null }); router.push("/book"); }} className="font-semibold underline">
             Pick another time
           </button>
