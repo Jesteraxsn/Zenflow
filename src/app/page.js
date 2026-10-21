@@ -14,7 +14,7 @@ export default function LandingPage() {
             <span className="font-normal">Est. 2024</span>
           </p>
           <div className="col-start-2">
-            <Logo />
+            <Logo mark="zenflow" />
           </div>
           <nav className="col-start-3 flex items-center justify-end gap-5 text-xs">
             <Link href="/services" className="hidden hover:text-forest sm:inline">Services</Link>

@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
-// `mark` shows the round Ginhawa "G"; `mark="zenflow"` shows the ZenFlow system logo (staff areas).
+// `mark` shows the round Ginhawa "G"; `mark="zenflow"` shows the ZenFlow system logo beside the name.
 export default function Logo({ href = "/", light = false, mark = false, subtitle = "Spa & Wellness Sanctuary" }) {
   return (
     <Link href={href} className="flex items-center gap-3">

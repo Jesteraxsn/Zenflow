@@ -1,6 +1,7 @@
 import { Cormorant_Garamond, Inter } from "next/font/google";
 import { AuthProvider } from "@/context/AuthContext";
 import { BookingProvider } from "@/context/BookingContext";
+import SplashScreen from "@/components/SplashScreen";
 import "./globals.css";
 
 const cormorant = Cormorant_Garamond({
@@ -26,8 +27,9 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${cormorant.variable} ${inter.variable} h-full antialiased`}>
+    <html lang="en" className={`${cormorant.variable} ${inter.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="flex min-h-full flex-col">
+        <SplashScreen />
         <AuthProvider>
           <BookingProvider>{children}</BookingProvider>
         </AuthProvider>

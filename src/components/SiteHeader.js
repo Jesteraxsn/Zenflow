@@ -37,7 +37,7 @@ export default function SiteHeader() {
   return (
     <header className="border-b border-line bg-cream">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Logo />
+        <Logo mark="zenflow" />
         <nav className="hidden items-center gap-8 md:flex">
           {nav.map((item) => (
             <Link
