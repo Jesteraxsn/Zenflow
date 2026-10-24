@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PageIntro from "@/components/PageIntro";
 import Icon from "@/components/Icon";
+import PasswordInput from "@/components/PasswordInput";
 import { ErrorBox, Loading, Toast } from "@/components/States";
 import { useAuth } from "@/context/AuthContext";
 import { addReceptionist, getStaffAccounts, removeReceptionist, updateStaffLogin } from "@/lib/api";
@@ -160,11 +161,11 @@ export default function StaffAccountsPage() {
               </div>
               <div>
                 <label htmlFor="newPassword" className="label">Password</label>
-                <input id="newPassword" type="password" required autoComplete="new-password" className="input" placeholder="At least 6 characters" value={newForm.password} onChange={setNew("password")} />
+                <PasswordInput id="newPassword" required autoComplete="new-password" className="input" placeholder="At least 6 characters" value={newForm.password} onChange={setNew("password")} />
               </div>
               <div>
                 <label htmlFor="newConfirm" className="label">Confirm password</label>
-                <input id="newConfirm" type="password" required autoComplete="new-password" className="input" value={newForm.confirm} onChange={setNew("confirm")} />
+                <PasswordInput id="newConfirm" required autoComplete="new-password" className="input" value={newForm.confirm} onChange={setNew("confirm")} />
               </div>
             </div>
             {saveError && <p className="mt-3 text-xs text-rose">{saveError.message}</p>}
@@ -188,11 +189,11 @@ export default function StaffAccountsPage() {
                   </div>
                   <div>
                     <label htmlFor="password" className="label">New password</label>
-                    <input id="password" type="password" autoComplete="new-password" className="input" placeholder="Leave blank to keep the current one" value={form.password} onChange={set("password")} />
+                    <PasswordInput id="password" autoComplete="new-password" className="input" placeholder="Leave blank to keep the current one" value={form.password} onChange={set("password")} />
                   </div>
                   <div>
                     <label htmlFor="confirm" className="label">Confirm new password</label>
-                    <input id="confirm" type="password" autoComplete="new-password" className="input" value={form.confirm} onChange={set("confirm")} />
+                    <PasswordInput id="confirm" autoComplete="new-password" className="input" value={form.confirm} onChange={set("confirm")} />
                   </div>
                 </div>
                 {isMe && <p className="mt-3 text-[11px] text-muted">This is your own account. Use the new details next time you sign in.</p>}

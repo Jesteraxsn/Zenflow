@@ -28,6 +28,8 @@ const paths = {
   logout: "M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10",
   x: "M6 6l12 12M18 6L6 18",
   menu: "M4 7h16M4 12h16M4 17h16",
+  eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  eyeOff: "M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a10 10 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2",
 };
 
 export default function Icon({ name, size = 16, className = "", strokeWidth = 1.6 }) {
